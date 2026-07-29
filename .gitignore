@@ -62,3 +62,8 @@ Thumbs.db
 .idea
 *.iml
 .vscode
+# Gradle/other tool downloads (only extracted binaries needed)
+/third_party/gradle/*.zip
+/third_party/ant/*.zip
+/third_party/ant/*.tar.gz
+/third_party/ant/*.tar.bz2

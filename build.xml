@@ -2,24 +2,44 @@
 <project name="javaLauncher" default="default" basedir=".">
 
   <property environment="env"/>
-  <condition property="out.path" value="${env.OUT_PATH}" else="out/classes">
-    <isset property="env.OUT_PATH"/>
-  </condition>
-  <condition property="out.name" value="${env.OUT_NAME}" else="jcef_app">
-    <isset property="env.OUT_NAME"/>
-  </condition>
-  <condition property="out.id" value="${env.OUT_ID}" else="org.jcef.jcef">
-    <isset property="env.OUT_ID"/>
-  </condition>
-  <condition property="out.mainclass" value="${env.OUT_MAINCLASS}" else="tests.detailed.MainFrame">
-    <isset property="env.OUT_MAINCLASS"/>
-  </condition>
+
+  <property name="out.path" value="${env.OUT_PATH}"/>
+  <property name="out.path" value="out/classes"/>
+  <property name="out.name" value="${env.OUT_NAME}"/>
+  <property name="out.name" value="jcef_app"/>
+  <property name="out.id" value="${env.OUT_ID}"/>
+  <property name="out.id" value="org.jcef.jcef"/>
+  <property name="out.mainclass" value="${env.OUT_MAINCLASS}"/>
+  <property name="out.mainclass" value="tests.detailed.MainFrame"/>
 
   <taskdef name="bundleapp"
       classname="com.oracle.appbundler.AppBundlerTask"
       classpath="third_party/appbundler/appbundler-1.0.jar"/>
 
+  <path id="jabel.class.path">
+    <fileset dir="third_party/jabel">
+      <include name="jabel-*.jar"/>
+    </fileset>
+  </path>
+
+  <path id="asm.class.path">
+    <fileset dir="third_party/jabel">
+      <include name="asm-*.jar"/>
+    </fileset>
+  </path>
+
+  <path id="backport.class.path">
+    <fileset dir="third_party/jabel">
+      <include name="streamsupport-*.jar"/>
+    </fileset>
+  </path>
+
+  <path id="desugar.class.path">
+    <path refid="asm.class.path"/>
+  </path>
+
   <path id="production.class.path">
+    <path refid="backport.class.path"/>
     <fileset dir="third_party/jogamp/jar">
       <include name="gluegen-rt.jar"/>
       <include name="jogl-all.jar"/>
@@ -31,30 +51,94 @@
     <fileset dir="third_party/junit" includes="junit-platform-console-standalone-6.1.2.jar"/>
   </path>
 
+  <condition property="is.java8">
+    <or>
+      <equals arg1="${ant.java.version}" arg2="1.8"/>
+      <equals arg1="${ant.java.version}" arg2="8"/>
+    </or>
+  </condition>
+  <condition property="is.not.java8">
+    <not>
+      <or>
+        <equals arg1="${ant.java.version}" arg2="1.8"/>
+        <equals arg1="${ant.java.version}" arg2="8"/>
+      </or>
+    </not>
+  </condition>
+
   <target name="check-java">
-    <condition property="java.version.supported">
-      <equals arg1="${ant.java.version}" arg2="17"/>
-    </condition>
-    <fail unless="java.version.supported" message="JDK 17 is required; Ant is running on Java ${ant.java.version}. Set JAVA_HOME to a JDK 17 installation."/>
+    <echo message="Detected Java version: ${ant.java.version}"/>
+    <echo message="Target bytecode version: Java 8 (1.8)"/>
   </target>
 
-  <target name="compile" depends="check-java">
+  <target name="check-java9plus" if="is.not.java8" depends="check-java">
+    <echo message="NOTE: Using JDK 9+ compiler with Jabel plugin for Java 8 bytecode output."/>
+  </target>
+
+  <target name="check-java8" if="is.java8" depends="check-java">
+    <echo message="WARNING: JDK 8 detected. Jabel syntax support disabled. Only Java 8 syntax will compile."/>
+  </target>
+
+  <target name="compile-desugar" depends="check-java8,check-java9plus">
     <mkdir dir="${out.path}"/>
     <javac encoding="UTF-8" nowarn="on" deprecation="off" debug="on" includeantruntime="false" destdir="${out.path}"
            fork="true" executable="${java.home}/bin/javac" memoryinitialsize="64m" memorymaximumsize="512m"
-           release="17">
-      <classpath refid="production.class.path"/>
+           source="1.8" target="1.8">
+      <classpath refid="desugar.class.path"/>
       <src path="java/org/cef"/>
+      <include name="desugar/**/*.java"/>
+    </javac>
+  </target>
+
+  <target name="compile-prod-java8" if="is.java8" depends="compile-desugar">
+    <mkdir dir="${out.path}"/>
+    <javac encoding="UTF-8" nowarn="on" deprecation="off" debug="on" includeantruntime="false"
+           destdir="${out.path}"
+           fork="true" executable="${java.home}/bin/javac" memoryinitialsize="64m" memorymaximumsize="512m"
+           source="1.8" target="1.8">
+      <classpath refid="production.class.path"/>
+      <classpath location="${out.path}"/>
+      <src path="java/org/cef"/>
+      <exclude name="desugar/**/*.java"/>
     </javac>
     <mkdir dir="${out.path}/manifest"/>
     <copy file="java/manifest/MANIFEST.MF" todir="${out.path}/manifest"/>
   </target>
 
-  <target name="compile-samples" depends="compile">
-    <javac encoding="UTF-8" nowarn="on" deprecation="off" debug="on" includeantruntime="false" destdir="${out.path}"
+  <target name="compile-prod-java9plus" if="is.not.java8" depends="compile-desugar">
+    <mkdir dir="${out.path}"/>
+    <javac encoding="UTF-8" nowarn="on" deprecation="off" debug="on" includeantruntime="false"
+           destdir="${out.path}"
            fork="true" executable="${java.home}/bin/javac" memoryinitialsize="64m" memorymaximumsize="512m"
-           release="17">
+           source="1.8" target="1.8">
+      <compilerarg value="-Xplugin:jabel"/>
+      <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED"/>
+      <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED"/>
+      <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED"/>
+      <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED"/>
+      <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED"/>
+      <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.jvm=ALL-UNNAMED"/>
+      <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED"/>
+      <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.model=ALL-UNNAMED"/>
+      <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED"/>
+      <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED"/>
+      <classpath refid="jabel.class.path"/>
+      <classpath refid="production.class.path"/>
       <classpath location="${out.path}"/>
+      <src path="java/org/cef"/>
+      <exclude name="desugar/**/*.java"/>
+    </javac>
+    <mkdir dir="${out.path}/manifest"/>
+    <copy file="java/manifest/MANIFEST.MF" todir="${out.path}/manifest"/>
+  </target>
+
+  <target name="compile" depends="compile-prod-java8,compile-prod-java9plus"/>
+
+  <target name="compile-samples-java8" if="is.java8" depends="compile">
+    <javac encoding="UTF-8" nowarn="on" deprecation="off" debug="on" includeantruntime="false"
+           destdir="${out.path}"
+           fork="true" executable="${java.home}/bin/javac" memoryinitialsize="64m" memorymaximumsize="512m"
+           source="1.8" target="1.8">
       <classpath refid="production.class.path"/>
       <src path="java/tests"/>
       <include name="detailed/**/*.java"/>
@@ -69,30 +153,101 @@
     </copy>
   </target>
 
-  <target name="compile-tests" depends="compile">
-    <javac encoding="UTF-8" nowarn="on" deprecation="off" debug="on" includeantruntime="false" destdir="${out.path}"
+  <target name="compile-samples-java9plus" if="is.not.java8" depends="compile">
+    <javac encoding="UTF-8" nowarn="on" deprecation="off" debug="on" includeantruntime="false"
+           destdir="${out.path}"
            fork="true" executable="${java.home}/bin/javac" memoryinitialsize="64m" memorymaximumsize="512m"
-           release="17">
-      <classpath location="${out.path}"/>
+           source="1.8" target="1.8">
+      <compilerarg value="-Xplugin:jabel"/>
+      <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED"/>
+      <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED"/>
+      <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED"/>
+      <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED"/>
+      <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED"/>
+      <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.jvm=ALL-UNNAMED"/>
+      <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED"/>
+      <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.model=ALL-UNNAMED"/>
+      <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED"/>
+      <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED"/>
+      <classpath refid="jabel.class.path"/>
+      <classpath refid="production.class.path"/>
+      <src path="java/tests"/>
+      <include name="detailed/**/*.java"/>
+      <include name="simple/**/*.java"/>
+    </javac>
+    <copy todir="${out.path}">
+      <fileset dir="java" casesensitive="no">
+        <include name="tests/detailed/**"/>
+        <include name="tests/simple/**"/>
+        <exclude name="**/*.java"/>
+      </fileset>
+    </copy>
+  </target>
+
+  <target name="compile-samples" depends="compile-samples-java8,compile-samples-java9plus"/>
+
+  <target name="compile-tests-java8" if="is.java8" depends="compile">
+    <javac encoding="UTF-8" nowarn="on" deprecation="off" debug="on" includeantruntime="false"
+           destdir="${out.path}"
+           fork="true" executable="${java.home}/bin/javac" memoryinitialsize="64m" memorymaximumsize="512m"
+           source="1.8" target="1.8">
       <classpath refid="test.class.path"/>
       <src path="java/tests"/>
       <include name="junittests/**/*.java"/>
     </javac>
   </target>
 
-  <target name="compile-all" depends="compile-samples,compile-tests"/>
+  <target name="compile-tests-java9plus" if="is.not.java8" depends="compile">
+    <javac encoding="UTF-8" nowarn="on" deprecation="off" debug="on" includeantruntime="false"
+           destdir="${out.path}"
+           fork="true" executable="${java.home}/bin/javac" memoryinitialsize="64m" memorymaximumsize="512m"
+           source="1.8" target="1.8">
+      <compilerarg value="-Xplugin:jabel"/>
+      <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED"/>
+      <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED"/>
+      <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED"/>
+      <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED"/>
+      <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED"/>
+      <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.jvm=ALL-UNNAMED"/>
+      <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED"/>
+      <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.model=ALL-UNNAMED"/>
+      <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED"/>
+      <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED"/>
+      <classpath refid="jabel.class.path"/>
+      <classpath refid="test.class.path"/>
+      <src path="java/tests"/>
+      <include name="junittests/**/*.java"/>
+    </javac>
+  </target>
+
+  <target name="compile-tests" depends="compile-tests-java8,compile-tests-java9plus"/>
+
+  <target name="desugar" depends="compile-samples,compile-tests">
+    <echo message="Running Desugar bytecode transformation for Java 8 API compatibility..."/>
+    <java classname="org.cef.desugar.DesugarTransformer" fork="true" failonerror="true">
+      <classpath location="${out.path}"/>
+      <classpath refid="desugar.class.path"/>
+      <arg value="${out.path}"/>
+    </java>
+  </target>
+
+  <target name="compile-all" depends="desugar"/>
 
   <target name="jar" depends="compile-all">
     <jar destfile="${out.path}/jcef.jar" index="true" update="false" manifest="java/manifest/MANIFEST.MF">
       <fileset dir="${out.path}">
         <include name="org/cef/**"/>
       </fileset>
+      <zipfileset src="third_party/jabel/streamsupport-1.7.2.jar">
+        <exclude name="META-INF/**"/>
+      </zipfileset>
     </jar>
     <jar destfile="${out.path}/jcef-tests.jar" index="true" update="false">
       <fileset dir="${out.path}">
         <include name="tests/**"/>
       </fileset>
     </jar>
+    <copy file="third_party/jabel/streamsupport-1.7.2.jar" todir="${out.path}"/>
   </target>
 
   <target name="bundle" depends="jar">
@@ -105,6 +260,7 @@
       <classpath dir="${out.path}">
         <include name="jcef.jar"/>
         <include name="jcef-tests.jar"/>
+        <include name="streamsupport-*.jar"/>
       </classpath>
       <classpath dir="third_party/jogamp/jar/">
         <include name="gluegen-rt.jar"/>

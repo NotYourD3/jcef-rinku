@@ -20,11 +20,11 @@ import zipfile
 
 CEF_VERSION = '151.2.3+g89cd581+chromium-151.0.7922.34'
 CEF_API_VERSION = '15100'
-JAVA_CLASS_VERSION = 61
-MCEF_DEFAULT_MAX_ARCHIVE_BYTES = 750 * 1024 * 1024
-MCEF_DEFAULT_MAX_EXTRACTED_BYTES = 2_000 * 1024 * 1024
+MIN_JAVA_CLASS_VERSION = 52  # Java 8 minimum for MC 1.7.10+ compat
+RINKU_DEFAULT_MAX_ARCHIVE_BYTES = 750 * 1024 * 1024
+RINKU_DEFAULT_MAX_EXTRACTED_BYTES = 2_000 * 1024 * 1024
 
-# MCEF does not currently expose an entry-count setting. Keep publication
+# Rinku does not currently expose an entry-count setting. Keep publication
 # validation bounded well above the complete six-platform runtime inventory so
 # malformed archives cannot exhaust filesystem metadata during extraction.
 MAX_ARCHIVE_MEMBERS = 100_000
@@ -35,7 +35,7 @@ class DistributionError(RuntimeError):
 
 
 class Target(object):
-  """Describes one official JCEF/MCEF publication target."""
+  """Describes one official JCEF/Rinku publication target."""
 
   def __init__(self, name, family, architecture, cef_platform, platform_label,
                architecture_label, jogamp_suffix):
@@ -462,7 +462,7 @@ def _validate_macos_runtime(runtime_root, target, check_architecture,
     links = [path for path in runtime_root.rglob('*') if path.is_symlink()]
     if links:
       raise DistributionError(
-          'MCEF-compatible macOS distribution must contain no links: {}'.format(
+          'Rinku-compatible macOS distribution must contain no links: {}'.format(
               ', '.join(str(path) for path in links)))
   resources = framework_contents / 'Resources'
   for obsolete_name in OBSOLETE_CEF_FILES:
@@ -523,7 +523,7 @@ def validate_runtime(runtime_root,
                                             check_architecture)
 
 
-def validate_jar_class_version(jar_path, expected_version=JAVA_CLASS_VERSION):
+def validate_jar_class_version(jar_path, min_version=MIN_JAVA_CLASS_VERSION):
   _require_nonempty_file(jar_path)
   versions = set()
   with zipfile.ZipFile(str(jar_path), 'r') as archive:
@@ -538,10 +538,16 @@ def validate_jar_class_version(jar_path, expected_version=JAVA_CLASS_VERSION):
         raise DistributionError('{} contains an invalid class file: {}'.format(
             jar_path, class_name))
       versions.add(struct.unpack('>H', header[6:8])[0])
-  if versions != {expected_version}:
-    raise DistributionError('{} contains class-file versions {}, expected '
-                            'Java 17 version {} only.'.format(
-                                jar_path, sorted(versions), expected_version))
+  if any(v < min_version for v in versions):
+    def _java_name(m):
+      if m >= 49: return str(m - 44)
+      return str(m)
+    raise DistributionError('{} contains class-file versions {}, minimum '
+                            'required Java {} version {} (found {}).'.format(
+                                jar_path, sorted(versions),
+                                _java_name(min_version),
+                                min_version,
+                                _java_name(min(versions))))
 
 
 def validate_matching_jar_classes(first_path, second_path):
@@ -567,17 +573,17 @@ def validate_archive(archive_path,
                      target,
                      required_relative_paths,
                      required_directory_paths=(),
-                     max_archive_bytes=MCEF_DEFAULT_MAX_ARCHIVE_BYTES,
-                     max_extracted_bytes=MCEF_DEFAULT_MAX_EXTRACTED_BYTES,
+                     max_archive_bytes=RINKU_DEFAULT_MAX_ARCHIVE_BYTES,
+                     max_extracted_bytes=RINKU_DEFAULT_MAX_EXTRACTED_BYTES,
                      max_members=MAX_ARCHIVE_MEMBERS):
-  """Validate an archive against MCEF's bounded, link-free extraction model."""
+  """Validate an archive against Rinku's bounded, link-free extraction model."""
   expected_root = target.name
   archive_size = archive_path.stat().st_size
   if archive_size <= 0:
     raise DistributionError('{} is empty.'.format(archive_path))
   if archive_size > max_archive_bytes:
     raise DistributionError(
-        '{} compressed size {} exceeds MCEF limit {}.'.format(
+        '{} compressed size {} exceeds Rinku limit {}.'.format(
             archive_path, archive_size, max_archive_bytes))
 
   members_by_name = {}
@@ -604,11 +610,11 @@ def validate_archive(archive_path,
                 normalized_name))
       if member.issym() or member.islnk():
         raise DistributionError(
-            'MCEF-compatible archives must not contain links: {} -> {}'.format(
+            'Rinku-compatible archives must not contain links: {} -> {}'.format(
                 member.name, member.linkname))
       if not member.isdir() and not member.isfile():
         raise DistributionError(
-            'MCEF-compatible archives contain only directories and regular '
+            'Rinku-compatible archives contain only directories and regular '
             'files; unsupported member: {}'.format(member.name))
       if member.isfile():
         if member.size < 0:
@@ -616,7 +622,7 @@ def validate_archive(archive_path,
               'Archive member has a negative size: {}'.format(member.name))
         extracted_size += member.size
         if extracted_size > max_extracted_bytes:
-          raise DistributionError('{} extracted size exceeds MCEF limit {}.'.
+          raise DistributionError('{} extracted size exceeds Rinku limit {}.'.
                                   format(archive_path, max_extracted_bytes))
       members_by_name[normalized_name] = member
 
