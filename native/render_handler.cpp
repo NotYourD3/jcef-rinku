@@ -280,6 +280,34 @@ void RenderHandler::OnPaint(CefRefPtr<CefBrowser> browser,
                        jdirectBuffer.get(), width, height);
 }
 
+void RenderHandler::OnAcceleratedPaint(CefRefPtr<CefBrowser> browser,
+                                       PaintElementType type,
+                                       const RectList& dirtyRects,
+                                       const CefAcceleratedPaintInfo& info) {
+  ScopedJNIEnv env;
+  if (!env)
+    return;
+
+  ScopedJNIBrowser jbrowser(env, browser);
+  jboolean jtype = type == PET_VIEW ? JNI_FALSE : JNI_TRUE;
+  ScopedJNIObjectLocal jrectArray(env, NewJNIRectArray(env, dirtyRects));
+  if (!jrectArray)
+    return;
+
+  jlong sharedHandle = 0;
+  jint colorFormat = 0;
+#if defined(OS_WIN)
+  sharedHandle = reinterpret_cast<jlong>(info.shared_texture_handle);
+  colorFormat = static_cast<jint>(info.format);
+#endif
+
+  JNI_CALL_VOID_METHOD(env, handle_, "onAcceleratedPaint",
+                       "(Lorg/cef/browser/CefBrowser;Z[Ljava/awt/"
+                       "Rectangle;JI)V",
+                       jbrowser.get(), jtype, jrectArray.get(),
+                       sharedHandle, colorFormat);
+}
+
 void RenderHandler::OnImeCompositionRangeChanged(CefRefPtr<CefBrowser> browser, const CefRange& selected_range, const RectList& character_bounds) {
   REQUIRE_UI_THREAD();
 

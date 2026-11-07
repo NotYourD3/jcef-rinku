@@ -208,6 +208,7 @@ set(JCEF_SRCS_WINDOWS
   jni_util_win.cpp
   jcef_dll.rc
   mouse_wheel_platform_util_win.cpp
+  shared_texture_win.cpp
   temp_window_win.cc
   temp_window_win.h
   util_win.cpp
@@ -530,7 +531,7 @@ if(OS_WINDOWS)
   SET_LIBRARY_TARGET_PROPERTIES(${JCEF_TARGET})
   SET_JCEF_CXX20_PROPERTIES(${JCEF_TARGET})
   add_dependencies(${JCEF_TARGET} libcef_dll_wrapper ${JCEF_HELPER_TARGET})
-  target_link_libraries(${JCEF_TARGET} libcef_lib libcef_dll_wrapper ${CEF_STANDARD_LIBS} ${JNI_LIBRARIES})
+  target_link_libraries(${JCEF_TARGET} libcef_lib libcef_dll_wrapper ${CEF_STANDARD_LIBS} ${JNI_LIBRARIES} d3d11 d3d12 dxgi opengl32 gdi32)
   target_include_directories(${JCEF_TARGET} PUBLIC ${JNI_INCLUDE_DIRS})
 
   # Compile flags specific to the JCEF library target.

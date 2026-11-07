@@ -984,6 +984,16 @@ public class CefClient extends CefClientHandler
     }
 
     @Override
+    public void onAcceleratedPaint(CefBrowser browser, boolean popup, Rectangle[] dirtyRects,
+            long sharedTextureHandle, int colorFormat) {
+        if (browser == null) return;
+
+        CefRenderHandler realHandler = browser.getRenderHandler();
+        if (realHandler != null)
+            realHandler.onAcceleratedPaint(browser, popup, dirtyRects, sharedTextureHandle, colorFormat);
+    }
+
+    @Override
     public void onImeCompositionRangeChanged(CefBrowser browser, CefRange selectedRange, Rectangle[] characterBounds) {
         if (browser == null) return;
 

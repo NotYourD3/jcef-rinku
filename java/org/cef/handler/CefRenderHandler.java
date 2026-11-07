@@ -75,6 +75,23 @@ public interface CefRenderHandler {
     public void onPaint(CefBrowser browser, boolean popup, Rectangle[] dirtyRects, ByteBuffer buffer, int width, int height);
 
     /**
+     * Called when an element has been rendered to the shared texture handle.
+     *
+     * <p>This method is only called when shared texture rendering is enabled (currently Windows only).
+     * {@code sharedTextureHandle} is a platform-specific handle to a D3D11 texture that can be opened
+     * with {@code ID3D11Device1::OpenSharedResource1}. The handle is valid only for the duration of
+     * this callback; implementations that need to retain the texture must copy its contents during
+     * the callback.
+     *
+     * @param browser The browser generating the event.
+     * @param popup True if painting a popup window.
+     * @param dirtyRects Array of dirty regions.
+     * @param sharedTextureHandle Platform-specific shared texture handle.
+     * @param colorFormat The pixel format of the texture (0=RGBA_8888, 1=BGRA_8888).
+     */
+    public default void onAcceleratedPaint(CefBrowser browser, boolean popup, Rectangle[] dirtyRects, long sharedTextureHandle, int colorFormat) {}
+
+    /**
      * Called synchronously on CEF's UI thread when the IME composition range changes.
      *
      * <p>{@code selectedRange} preserves CEF's exact unsigned range direction without

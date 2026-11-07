@@ -3,7 +3,7 @@ plugins {
     id 'idea'
 }
 
-group = 'org.jcef'
+group = 'java-cef'
 version = '1.0.0'
 
 java {
@@ -100,7 +100,7 @@ idea {
 // ========================================================================
 def isJava8 = JavaVersion.current() == JavaVersion.VERSION_1_8
 def jabelJar = file('third_party/jabel/jabel-1.1.0.jar')
-def asmClasspath = files(
+def asmclasspath = project.files(
     'third_party/jabel/asm-9.6.jar',
     'third_party/jabel/asm-commons-9.6.jar',
     'third_party/jabel/asm-tree-9.6.jar'
@@ -155,37 +155,33 @@ compileJava {
 // ========================================================================
 // 任务: Desugar 字节码转换
 // ========================================================================
+def desugarMainClasses = sourceSets.main.output.classesDirs
+def desugarMainResources = sourceSets.main.output.resourcesDir
+def desugarSamplesClasses = sourceSets.samples.output.classesDirs
+def desugarAsmClasspath = asmclasspath
+
 tasks.register('desugar') {
     dependsOn compileJava, compileSamplesJava
     description = 'Rewrite List.of / Map.of etc. bytecode to Java 8 backports'
+    notCompatibleWithConfigurationCache('Uses project state at execution time')
 
     doLast {
         def allDirs = []
-        allDirs.addAll(sourceSets.main.output.classesDirs.files)
-        allDirs.addAll(sourceSets.samples.output.classesDirs.files)
+        allDirs.addAll(desugarMainClasses.files)
+        allDirs.addAll(desugarSamplesClasses.files)
 
         println "Running DesugarTransformer on ${allDirs.size()} class dirs..."
         def transformedCount = 0
         allDirs.each { dir ->
-            def baos = new ByteArrayOutputStream()
-            def execResult = javaexec {
-                mainClass = 'org.cef.desugar.DesugarTransformer'
-                classpath = files(
-                    sourceSets.main.output.classesDirs,
-                    sourceSets.main.output.resourcesDir,
-                    asmClasspath
-                )
-                args dir.absolutePath
-                setStandardOutput baos
-                setErrorOutput baos
-                setIgnoreExitValue true
-            }
-            def outputStr = baos.toString()
-            println outputStr.trim()
-            def m = outputStr =~ /transformed\s+(\d+)\s+class/
+            def cp = [desugarMainClasses.asPath, desugarMainResources, desugarAsmClasspath.asPath].join(File.pathSeparator)
+            def process = new ProcessBuilder('java', '-cp', cp, 'org.cef.desugar.DesugarTransformer', dir.absolutePath)
+                    .redirectErrorStream(true)
+                    .start()
+            def output = process.inputStream.text
+            process.waitFor()
+            println output.trim()
+            def m = output =~ /transformed\s+(\d+)\s+class/
             if (m) transformedCount += (m[0][1] as int)
-            if (execResult.exitValue != 0) {
-            }
         }
         println "Desugar complete. Total transformed: ${transformedCount} class files."
     }
@@ -203,15 +199,15 @@ tasks.register('jcefTestsJar', Jar) {
     archiveBaseName = 'jcef-tests'
     archiveVersion = ''
     destinationDirectory = layout.buildDirectory.dir('libs')
-    from sourceSets.test.output.classesDirs
-    from sourceSets.test.output.resourcesDir
-    from sourceSets.samples.output.classesDirs
-    from sourceSets.samples.output.resourcesDir
+    from project.sourceSets.test.output.classesDirs
+    from project.sourceSets.test.output.resourcesDir
+    from project.sourceSets.samples.output.classesDirs
+    from project.sourceSets.samples.output.resourcesDir
 }
 
 jar {
     dependsOn desugar, jcefTestsJar
-    archiveBaseName = 'jcef'
+    archiveBaseName = 'jcef-rinku'
     archiveVersion = ''
     destinationDirectory = layout.buildDirectory.dir('libs')
 
@@ -219,8 +215,8 @@ jar {
         from('java/manifest/MANIFEST.MF')
     }
 
-    from sourceSets.main.output.classesDirs
-    from sourceSets.main.output.resourcesDir
+    from project.sourceSets.main.output.classesDirs
+    from project.sourceSets.main.output.resourcesDir
 
     // --- 内嵌 streamsupport backport 类 (fat jar) ---
     from(zipTree(streamsupportJar)) {
@@ -240,7 +236,7 @@ jar {
         // ---------- 字节码版本校验 ----------
         println ""
         println "========== VERIFICATION =========="
-        def jcefJar = new File(out, 'jcef.jar')
+        def jcefJar = new File(out, 'jcef-rinku.jar')
         def tmpDir = new File(buildDir, 'verify-tmp-' + System.currentTimeMillis())
         tmpDir.deleteDir()
         tmpDir.mkdirs()
@@ -301,6 +297,36 @@ tasks.register('copyLibs') {
 
 build {
     dependsOn 'copyLibs'
+}
+
+
+// sources artifact: jcef-rinku-sources.jar (classifier=sources)
+configurations {
+    sourcesElements {
+        canBeConsumed = true
+        canBeResolved = false
+    }
+    // jcefJar: provides the main jcef-rinku.jar for downstream consumers
+    jcefJar {
+        canBeConsumed = true
+        canBeResolved = false
+    }
+}
+
+tasks.register('sourcesJar', Jar) {
+    dependsOn classes
+    archiveBaseName = 'jcef-rinku'
+    archiveClassifier = 'sources'
+    archiveVersion = ''
+    destinationDirectory = layout.buildDirectory.dir('libs')
+    from project.sourceSets.main.java
+    include 'org/cef/**/*.java'
+}
+
+artifacts {
+    archives sourcesJar
+    sourcesElements sourcesJar
+    jcefJar jar
 }
 
 defaultTasks 'build'

@@ -40,6 +40,10 @@ class RenderHandler : public CefRenderHandler {
                        const void* buffer,
                        int width,
                        int height) override;
+  virtual void OnAcceleratedPaint(CefRefPtr<CefBrowser> browser,
+                                  PaintElementType type,
+                                  const RectList& dirtyRects,
+                                  const CefAcceleratedPaintInfo& info) override;
   virtual void OnImeCompositionRangeChanged(CefRefPtr<CefBrowser> browser, const CefRange& selected_range, const RectList& character_bounds) override;
   virtual void OnTextSelectionChanged(CefRefPtr<CefBrowser> browser, const CefString& selected_text, const CefRange& selected_range) override;
   virtual bool StartDragging(CefRefPtr<CefBrowser> browser,

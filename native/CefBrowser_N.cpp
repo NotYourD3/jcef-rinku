@@ -3461,10 +3461,18 @@ void create(std::shared_ptr<JNIObjectsForCreate> objs,
 #endif
   } else {
     windowInfo.SetAsWindowless((CefWindowHandle)windowHandle);
+#if defined(OS_WIN)
+    windowInfo.shared_texture_enabled = true;
+#endif
   }
 
   CefRefPtr<CefBrowser> browserObj;
   CefString strUrl = GetJNIString(env, static_cast<jstring>(objs->url.get()));
+#if defined(OS_WIN)
+  LOG(INFO) << "JCEF-RINKU: shared_texture_enabled="
+            << windowInfo.shared_texture_enabled
+            << " for OSR browser, url=" << strUrl.ToString();
+#endif
 
   CefRefPtr<CefRequestContext> context = GetCefFromJNIObject<CefRequestContext>(
       env, objs->jcontext, "CefRequestContext");
@@ -3483,6 +3491,8 @@ void create(std::shared_ptr<JNIObjectsForCreate> objs,
 
   bool result = CefBrowserHost::CreateBrowser(
       windowInfo, clientHandler.get(), strUrl, settings, extra_info, context);
+  LOG(INFO) << "JCEF-RINKU: CreateBrowser returned " << result
+            << " for url=" << strUrl.ToString();
   if (!result) {
     lifeSpanHandler->unregisterJBrowser(globalRef);
     env->DeleteGlobalRef(globalRef);
